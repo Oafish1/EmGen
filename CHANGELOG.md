@@ -1,4 +1,4 @@
-# 1.0.1 - 2021-08-22
+# 1.1.0 - 2021-08-22
 ### Added
 - Evaluation of model on new dataset
 - New logging techniques
