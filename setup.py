@@ -14,6 +14,7 @@ setup(
     test_suite='tests',
     install_requires=[
         'opencv-python',
+        'matplotlib',
         'numpy',
         'pandas',
         'pytorch-lightning',

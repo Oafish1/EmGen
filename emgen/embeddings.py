@@ -1,4 +1,3 @@
-from math import prod
 from pathlib import Path
 
 import cv2
@@ -14,7 +13,7 @@ from torch.utils.data import DataLoader, Dataset
 class emgen_model(pl.LightningModule):
     def __init__(self,
                  input_size=512,
-                 num_conv_layers=2):
+                 num_conv_layers=3):
         super().__init__()
 
         self.input_size = input_size
@@ -25,18 +24,14 @@ class emgen_model(pl.LightningModule):
         self.maxpool = nn.MaxPool2d(self.pool_scale)
         self.flatten = nn.Flatten()
 
-        self.conv_layers = [nn.Conv2d(3 if i==0 else 128*i, 128*(i+1), 5) for i in range(num_conv_layers)]
-        self.batchnorm_layers = [nn.BatchNorm2d(128*(i+1)) for i in range(num_conv_layers)]
+        self.conv_layers = [nn.Conv2d(3 if i == 0 else 128, 128, 5)
+                            for i in range(num_conv_layers)]
+        self.batchnorm_layers = [nn.BatchNorm2d(128) for i in range(num_conv_layers)]
 
-        calc_dim = self.input_size / (self.pool_scale**num_conv_layers)
-        assert calc_dim % 1 == 0, f'input_size must be divisible by \
-                                    {self.pool_scale}**{num_conv_layers}'
-        dim = (128 * self.num_conv_layers, int(calc_dim), int(calc_dim))
-        #self.linear = nn.Linear(prod(dim), 10)230400
-        self.linear = nn.Linear(230400, 10)
+        self.linear = nn.Linear(4608, 10)
 
     def forward(self, x):
-        out = x
+        out = x.permute(0, 3, 1, 2)
 
         for conv, batchnorm in zip(self.conv_layers, self.batchnorm_layers):
             out = conv(out)
@@ -53,46 +48,60 @@ class emgen_model(pl.LightningModule):
         embeddings = {id: t.mean(logits[labels == id], 0)
                       for id in ids}
 
-        # Separability, inverse compactness, magnitude penalty
-        separability = [t.sum(t.square(embeddings[id1] - embeddings[id2])) for id2 in ids
-                        for id1 in ids]
-        compactness = [1/(1 + t.sum(t.square(logits[labels == id] - embeddings[id]))) for id in ids]
+        # Separability, compactness, and magnitude penalties
+        separability = [1 / (1 + t.sum(t.square(embeddings[id1] - embeddings[id2])))
+                        for id2 in ids for id1 in ids]
+        compactness = [t.sum(t.square(logits[labels == id] - embeddings[id]))
+                       for id in ids]
         magnitude = [t.sum(t.square(logits[labels == id])) for id in ids]
         separability = t.sum(t.stack(separability))
         compactness = t.sum(t.stack(compactness))
         magnitude = t.sum(t.stack(magnitude))
+        self.log('separability', separability)
+        self.log('compactness', compactness)
+        self.log('magnitude', magnitude)
 
-        loss = (1/10)*separability + (1)*compactness + (1/100)*magnitude
+        # If magnitude is too high, the embeddings will converge to zeros
+        loss = (1)*separability + (1/2)*compactness + (1/20)*magnitude
         return loss
 
     def configure_optimizers(self):
-        optimizer = t.optim.AdamW(self.parameters(), lr=1e-3)
+        optimizer = t.optim.AdamW(self.parameters(), lr=1e-5)
+        return optimizer
 
     def training_step(self, batch, batch_idx):
         x, y = batch
-        images = x.view(-1, 3, self.input_size, self.input_size)
-        labels = y.view(-1)
+        images = x
+        labels = y.squeeze()
         logits = self(images)
         loss = self.loss(labels, logits)
         self.log('train_loss', loss)
         return loss
 
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
+        images = x
+        labels = y.squeeze()
+        logits = self(images)
+        loss = self.loss(labels, logits)
+        self.log('val_loss', loss)
+        return loss
+
 
 class emgen_dataset(Dataset):
-    def __init__(self, path, image_ids, labels, extension='.jpg'):
+    def __init__(self, path, fnames, labels):
         self.path = path
-        self.image_ids = image_ids
+        self.fnames = fnames
         self.labels = labels
-        self.extension = extension
 
     def __len__(self):
         return len(self.labels)
 
     def __getitem__(self, idx):
-        image_id = str(self.image_ids[idx])
-        image_path = self.path / image_id
-        image = cv2.imread(str(image_path) + self.extension)
-        image = cv2.resize(image,(512, 512)).astype(np.float64)
+        fname = str(self.fnames[idx])
+        image_path = self.path / fname
+        image = cv2.imread(str(image_path))
+        image = cv2.resize(image, (512, 512)).astype(np.float64)
         image = t.tensor(image, dtype=t.float)
 
         label = self.labels[idx]
@@ -101,24 +110,57 @@ class emgen_dataset(Dataset):
 
 
 class emgen_dataloader(pl.LightningDataModule):
-    def __init__(self, path='.', extension='.jpg', batch_size=64):
+    def __init__(self,
+                 label_path,
+                 data_path='.',
+                 batch_size=64,
+                 num_workers=8):
         super().__init__()
 
-        self.path = Path(path)
-        self.extension = extension
+        self.label_path = Path(label_path)
+        self.data_path = Path(data_path)
         self.batch_size = batch_size
+        self.num_workers = num_workers
 
     def setup(self, stage=None):
-        # csv should have columns 'id' and 'label'
-        # images should just have ints and an extension as their names
-        labels_csv = pd.read_csv(self.path / 'labels.csv')
-        ids = labels_csv['id'].values
+        # csv should have columns 'file_name' and 'label'
+        labels_csv = pd.read_csv(self.label_path)
+        ids = labels_csv['file_name'].values
         labels = labels_csv['label'].values
         x_train, x_val, y_train, y_val = train_test_split(ids, labels)
-        self.train_dataset = emgen_dataset(self.path,
+        self.train_dataset = emgen_dataset(self.data_path,
                                            x_train,
-                                           y_train,
-                                           self.extension)
+                                           y_train)
+        self.validation_dataset = emgen_dataset(self.data_path,
+                                                x_val,
+                                                y_val)
 
     def train_dataloader(self):
-        return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True)
+        return self._dataloader(self.train_dataset)
+
+    def val_dataloader(self):
+        return self._dataloader(self.validation_dataset)
+
+    def _dataloader(self, dataset):
+        return DataLoader(dataset,
+                          batch_size=self.batch_size,
+                          num_workers=self.num_workers)
+
+
+class GetMetrics(pl.callbacks.Callback):
+    def __init__(self):
+        super().__init__()
+        self.history_train = {}
+        self.history_validation = {}
+
+    def on_train_epoch_end(self, *args):
+        self._on_end(*args[:-1], self.history_train)
+
+    def on_validation_epoch_end(self, *args):
+        self._on_end(*args, self.history_validation)
+
+    def _on_end(self, trainer, pl_module, history):
+        for k in trainer.callback_metrics:
+            if k not in history:
+                history[k] = []
+            history[k].append(trainer.callback_metrics[k])

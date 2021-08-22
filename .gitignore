@@ -125,3 +125,6 @@ lightning_logs/
 
 # Datasets
 data/
+
+# TODO File
+TODO*
