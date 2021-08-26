@@ -1,4 +1,4 @@
-# 1.1.0 - 2021-08-22
+# 1.2.0 - 2021-08-25
 ### Added
 - CUDA compatibility and CPU usage optimization
 - Various running utilities
