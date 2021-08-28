@@ -1,3 +1,16 @@
+# 1.3.0 - 2021-08-25
+### Added
+- Image sample display function `plot_sample_images`
+- `equal_samples_labels_images` to more easily pull similarly-labeled samples for review
+- `plot_embeddings` to more easily plot embeddings
+- Barebones multiple-idx pulling to `emgen_dataset`
+- More detailed display to `README.md`
+- GitHub workflow
+
+### Changed
+- Image storage format (BGR -> RGB, 0-255 -> 0.0-1.0)
+
+
 # 1.2.0 - 2021-08-25
 ### Added
 - CUDA compatibility and CPU usage optimization
@@ -13,6 +26,7 @@
 ### Fixed
 - Dataset loading
 
+
 # 1.1.0 - 2021-08-22
 ### Added
 - Evaluation of model on new dataset
@@ -24,6 +38,7 @@
 
 ### Fixed
 - Reverse compactness, separability metrics
+
 
 # 1.0.0 - 2021-08-21
 ### Added

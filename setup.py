@@ -21,5 +21,18 @@ setup(
         'sklearn',
         'torch'
         ],
-    tests_require=['pytest']
+    extras_require={
+        'dev': [
+            'flake8',
+            'flake8-docstrings',
+            'flake8-import-order',
+            'pip-tools',
+            'pytest',
+            'pytest-cov',
+        ],
+        'notebooks': [
+            'jupyterlab',
+        ]
+    },
+    tests_require=['pytest'],
 )

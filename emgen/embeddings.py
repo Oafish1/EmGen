@@ -87,13 +87,10 @@ class emgen_model(pl.LightningModule):
         separability = t.sum(t.stack(separability))
         compactness = t.sum(t.stack(compactness))
         magnitude = t.sum(t.stack(magnitude))
-        self.log('separability', separability)
-        self.log('compactness', compactness)
-        self.log('magnitude', magnitude)
 
         # If magnitude is too high, the embeddings will converge to zeros
         loss = (3)*separability + (1)*compactness + (1/100)*magnitude
-        return loss
+        return loss, (separability, compactness, magnitude)
 
     def configure_optimizers(self):
         optimizer = t.optim.Adam(self.parameters(), lr=1e-4)
@@ -105,8 +102,11 @@ class emgen_model(pl.LightningModule):
         images = x
         labels = y.squeeze()
         logits = self(images)
-        loss = self.loss(labels, logits)
+        loss, (separability, compactness, magnitude) = self.loss(labels, logits)
         self.log('train_loss', loss)
+        self.log('train_separability', separability)
+        self.log('train_compactness', compactness)
+        self.log('train_magnitude', magnitude)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -115,8 +115,11 @@ class emgen_model(pl.LightningModule):
         images = x
         labels = y.squeeze()
         logits = self(images)
-        loss = self.loss(labels, logits)
+        loss, (separability, compactness, magnitude) = self.loss(labels, logits)
         self.log('val_loss', loss)
+        self.log('val_separability', separability)
+        self.log('val_compactness', compactness)
+        self.log('val_magnitude', magnitude)
         return loss
 
 
@@ -135,14 +138,18 @@ class emgen_dataset(Dataset):
         return len(self.labels)
 
     def __getitem__(self, idx):
-        fname = str(self.fnames[idx])
+        # Naeve approach
+        if not isinstance(idx, int):
+            return [self.__getitem__(i) for i in idx]
+        fname = self.fnames[idx]
         image_path = self.path / fname
         image = cv2.imread(str(image_path))
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = (
             cv2.resize(image, (self.image_size, self.image_size))
             .astype(np.float64)
         )
-        image = t.tensor(image, dtype=t.float)
+        image = t.tensor(image, dtype=t.float) / 255
 
         label = self.labels[idx]
         label = t.tensor(label, dtype=t.int)
@@ -193,16 +200,13 @@ class emgen_dataloader(pl.LightningDataModule):
 
 
 class GetMetrics(pl.callbacks.Callback):
+    """Callback to record training-time metrics"""
     def __init__(self):
         super().__init__()
-        self.history_train = {}
-        self.history_val = {}
+        self.history = {}
 
     def on_train_epoch_end(self, *args):
-        self._on_end(*args[:-1], self.history_train)
-
-    def on_validation_epoch_end(self, *args):
-        self._on_end(*args, self.history_val)
+        self._on_end(*args[:-1], self.history)
 
     def _on_end(self, trainer, pl_module, history):
         for k in trainer.callback_metrics:

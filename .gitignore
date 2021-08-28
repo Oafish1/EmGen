@@ -104,9 +104,6 @@ ENV/
 # IDE settings
 .vscode/
 
-# Formatting
-.github/
-
 # OSX useful to ignore
 *.DS_Store
 .AppleDouble
@@ -128,3 +125,6 @@ data/
 
 # TODO File
 TODO*
+
+# Temp ignore
+*.ipynb

@@ -1,7 +1,3 @@
 -c requirements.txt
 
-flake8
-flake8-docstrings
-flake8-import-order
-pip-tools
-pytest
+-e file:.[dev,notebooks]
