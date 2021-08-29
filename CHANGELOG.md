@@ -6,10 +6,12 @@
 - `plot_embeddings` to more easily plot embeddings
 - Barebones multiple-idx pulling to `emgen_dataset`
 - More detailed display to `README.md`
+- More detailed debugging information and parameters for images
 - GitHub workflow
 
 ### Changed
 - Image storage format (BGR -> RGB, 0-255 -> 0.0-1.0)
+- Refactor model and utility function storage
 
 
 # 1.2.0 - 2021-08-25

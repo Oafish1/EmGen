@@ -57,7 +57,7 @@ def plot_training(history,
     plt.legend(loc='upper right')
 
 
-def equal_samples_labels_images(labels, instances=20, seed=42):
+def equal_samples_labels_images(labels, instances=20, seed=None):
     """Returns idx of `entries` sample per label, if possible"""
     samples = (
         pd.DataFrame({'labels': labels})
@@ -83,9 +83,11 @@ def equal_samples_labels_images(labels, instances=20, seed=42):
     return samples
 
 
-def plot_embeddings(model, dataset, sets=5, instances=20):
+def plot_embeddings(model, dataset, sets=5, instances=20, seed=42):
     """Perform sample embedding on a dataset and plot the result with PCA"""
-    samples = equal_samples_labels_images(dataset.labels, instances=instances)
+    samples = equal_samples_labels_images(dataset.labels,
+                                          instances=instances,
+                                          seed=seed)
     batch = [None, None]
     for idx in samples[:instances*sets]:
         datapoint = dataset[idx]
@@ -102,12 +104,15 @@ def plot_embeddings(model, dataset, sets=5, instances=20):
     pca_visualize(embeddings, labels)
 
 
-def plot_sample_images(dataset, dim=(3, 5)):
+def plot_sample_images(dataset, dim=(3, 5), seed=42):
     """Plot a sample of the dataset images"""
+    dataset = dataset[equal_samples_labels_images(dataset.labels,
+                                                  instances=dim[1],
+                                                  seed=seed)]
     for i in range(dim[0]):
         for j in range(dim[1]):
             idx = i*dim[1] + j
             plt.subplot(*dim, idx + 1)
             image, label = dataset[idx]
-            plt.title(label.item())
+            plt.title(f'(Uploader: {label.item()})\n{image.__fname__}')
             plt.imshow(image)

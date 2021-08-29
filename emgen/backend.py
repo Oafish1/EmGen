@@ -6,56 +6,17 @@ import pandas as pd
 import pytorch_lightning as pl
 from sklearn.model_selection import train_test_split
 import torch as t
-from torch import nn
 from torch.utils.data import DataLoader, Dataset
-
-from .utilities import BasicBlock
 
 
 device = t.device("cuda:0" if t.cuda.is_available() else "cpu")
 
 
-class emgen_model(pl.LightningModule):
+class EmGenModel(pl.LightningModule):
     def __init__(self):
         super().__init__()
 
-        def main_block(inputs, outputs):
-            return nn.Sequential(
-                BasicBlock(inputs, outputs),
-                BasicBlock(outputs, outputs),
-            )
-
-        self.preprocess = nn.Sequential(
-            nn.Conv2d(3, 64, 7, stride=2, padding=3),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.MaxPool2d(3, stride=2, padding=1),
-        )
-        self.blocks = nn.ModuleList([
-            main_block(64, 64),
-            main_block(64, 128),
-            main_block(128, 256),
-            main_block(256, 512),
-        ])
-        self.postprocess = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
-            nn.Linear(512, 10),
-        )
-
-        self.device_param = nn.Parameter(t.empty(0))
         self.to(device)
-
-    def forward(self, x):
-        x = x.to(self.device_param.device)
-        out = x.permute(0, 3, 1, 2)
-
-        out = self.preprocess(out)
-        for block in self.blocks:
-            out = block(out)
-        out = self.postprocess(out)
-
-        return out
 
     def loss(self, labels, logits):
         ids = t.unique(labels)
@@ -83,7 +44,7 @@ class emgen_model(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x, y = batch
-        x, y = x.to(self.device_param.device), y.to(self.device_param.device)
+        x, y = x.to(self.device), y.to(self.device)
         images = x
         labels = y.squeeze()
         logits = self(images)
@@ -96,7 +57,7 @@ class emgen_model(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
-        x, y = x.to(device), y.to(device)
+        x, y = x.to(self.device), y.to(self.device)
         images = x
         labels = y.squeeze()
         logits = self(images)
@@ -108,7 +69,7 @@ class emgen_model(pl.LightningModule):
         return loss
 
 
-class emgen_dataset(Dataset):
+class EmGenDataset(Dataset):
     def __init__(self,
                  path,
                  fnames,
@@ -135,13 +96,14 @@ class emgen_dataset(Dataset):
             .astype(np.float64)
         )
         image = t.tensor(image, dtype=t.float) / 255
+        image.__fname__ = fname
 
         label = self.labels[idx]
         label = t.tensor(label, dtype=t.int)
         return (image, label)
 
 
-class emgen_dataloader(pl.LightningDataModule):
+class EmGenDataLoader(pl.LightningDataModule):
     def __init__(self,
                  label_path,
                  data_path='.',
@@ -165,12 +127,12 @@ class emgen_dataloader(pl.LightningDataModule):
                                            labels,
                                            random_state=self.seed)
         x_train, x_val, y_train, y_val = self.split_data
-        self.train_dataset = emgen_dataset(self.data_path,
-                                           x_train,
-                                           y_train)
-        self.val_dataset = emgen_dataset(self.data_path,
-                                         x_val,
-                                         y_val)
+        self.train_dataset = EmGenDataset(self.data_path,
+                                          x_train,
+                                          y_train)
+        self.val_dataset = EmGenDataset(self.data_path,
+                                        x_val,
+                                        y_val)
 
     def train_dataloader(self):
         return self._dataloader(self.train_dataset)
