@@ -1,4 +1,3 @@
-from math import prod
 from pathlib import Path
 
 import cv2
@@ -10,51 +9,39 @@ import torch as t
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
-from .utilities import conv_output_shape, pool_output_shape
+from .utilities import BasicBlock
 
 
 device = t.device("cuda:0" if t.cuda.is_available() else "cpu")
 
 
 class emgen_model(pl.LightningModule):
-    def __init__(self,
-                 input_size=128,
-                 conv_depth=64,
-                 conv_kernel=5,
-                 pool_scale=2,
-                 num_conv_layers=4,
-                 embed_size=50):
+    def __init__(self):
         super().__init__()
 
-        self.input_size = input_size
-        self.conv_depth = conv_depth
-        self.conv_kernel = conv_kernel
-        self.pool_scale = pool_scale
-        self.num_conv_layers = num_conv_layers
-        self.embed_size = embed_size
+        def main_block(inputs, outputs):
+            return nn.Sequential(
+                BasicBlock(inputs, outputs),
+                BasicBlock(outputs, outputs),
+            )
 
-        self.relu = nn.ReLU()
-        self.maxpool = nn.MaxPool2d(self.pool_scale)
-        self.flatten = nn.Flatten()
-
-        self.conv_layers = [nn.Conv2d(3 if i == 0 else self.conv_depth,
-                                      self.conv_depth,
-                                      self.conv_kernel)
-                            for i in range(num_conv_layers)]
-        self.batchnorm_layers = [nn.BatchNorm2d(self.conv_depth)
-                                 for i in range(num_conv_layers)]
-        self.conv_layers = nn.ModuleList(self.conv_layers)
-        self.batchnorm_layers = nn.ModuleList(self.batchnorm_layers)
-
-        self.dropout = nn.Dropout(.8)
-
-        dim = (3, input_size, input_size)
-        for i in range(num_conv_layers):
-            dim = self.conv_depth, *dim[1:]
-            dim = conv_output_shape(dim, self.conv_kernel)
-            dim = pool_output_shape(dim, self.pool_scale)
-        calc_dim = prod(dim)
-        self.linear = nn.Linear(calc_dim, self.embed_size)
+        self.preprocess = nn.Sequential(
+            nn.Conv2d(3, 64, 7, stride=2, padding=3),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.MaxPool2d(3, stride=2, padding=1),
+        )
+        self.blocks = nn.ModuleList([
+            main_block(64, 64),
+            main_block(64, 128),
+            main_block(128, 256),
+            main_block(256, 512),
+        ])
+        self.postprocess = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(512, 10),
+        )
 
         self.device_param = nn.Parameter(t.empty(0))
         self.to(device)
@@ -62,14 +49,12 @@ class emgen_model(pl.LightningModule):
     def forward(self, x):
         x = x.to(self.device_param.device)
         out = x.permute(0, 3, 1, 2)
-        for conv, batchnorm in zip(self.conv_layers, self.batchnorm_layers):
-            out = conv(out)
-            out = self.relu(out)
-            out = self.maxpool(out)
-            out = batchnorm(out)
-        out = self.flatten(out)
-        out = self.dropout(out)
-        out = self.linear(out)
+
+        out = self.preprocess(out)
+        for block in self.blocks:
+            out = block(out)
+        out = self.postprocess(out)
+
         return out
 
     def loss(self, labels, logits):
@@ -93,7 +78,7 @@ class emgen_model(pl.LightningModule):
         return loss, (separability, compactness, magnitude)
 
     def configure_optimizers(self):
-        optimizer = t.optim.Adam(self.parameters(), lr=1e-4)
+        optimizer = t.optim.Adam(self.parameters(), lr=1e-3)
         return optimizer
 
     def training_step(self, batch, batch_idx):

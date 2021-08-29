@@ -1,3 +1,4 @@
+import random
 from typing import Any, Optional, Union
 
 import matplotlib.pyplot as plt
@@ -56,17 +57,29 @@ def plot_training(history,
     plt.legend(loc='upper right')
 
 
-def equal_samples_labels_images(labels, instances=20):
+def equal_samples_labels_images(labels, instances=20, seed=42):
     """Returns idx of `entries` sample per label, if possible"""
-    samples = (pd.DataFrame({'labels': labels})
-                 .sort_values('labels')
-                 .groupby('labels')
-                 .head(instances))
+    samples = (
+        pd.DataFrame({'labels': labels})
+          .sample(frac=1)  # Shuffle in-group order
+          .groupby('labels', sort=False)
+          .head(instances)
+    )
+
+    # Shuffle group order
+    # https://stackoverflow.com/a/45586039
+    rng = random.Random(seed)
+    groups = [df for _, df in samples.groupby('labels')]
+    rng.shuffle(groups)
+    samples = pd.concat(groups)
+
+    # Only keep ids with sufficient data
     labels, labels_counts = np.unique(samples['labels'], return_counts=True)
     samples = [
         i for i, s in samples.iterrows()
         if labels_counts[np.argwhere(s['labels'] == labels)] >= instances
     ]
+
     return samples
 
 

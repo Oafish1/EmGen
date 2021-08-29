@@ -1,5 +1,6 @@
 # 1.3.0 - 2021-08-25
 ### Added
+- [ResNet](https://arxiv.org/abs/1512.03385)
 - Image sample display function `plot_sample_images`
 - `equal_samples_labels_images` to more easily pull similarly-labeled samples for review
 - `plot_embeddings` to more easily plot embeddings
